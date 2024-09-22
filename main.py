@@ -42,13 +42,19 @@ def clean_tag_for_hashing(tag, insignificant_tags, base_url):
     for sub_tag in tag_copy.find_all(insignificant_tags):
         sub_tag.unwrap()
 
+    contains_link = False
     # Resolve all <a> tag hrefs to absolute URLs
     for a_tag in tag_copy.find_all('a', href=True):
+        contains_link = True
         original_href = a_tag['href']
         a_tag['href'] = urljoin(base_url, original_href)
 
-    # Get the cleaned outer HTML of the tag
-    cleaned_html = re.sub(r'\s+', ' ', str(tag_copy).strip()).strip()
+    if contains_link:
+        # Get the cleaned outer HTML of the tag
+        cleaned_html = re.sub(r'\s+', ' ', str(tag_copy).strip()).strip()
+    else:
+        cleaned_html = ""
+
     return cleaned_html
 
 def get_header(headers, key):
@@ -67,6 +73,40 @@ def replace_tag(tag, replacement_text):
     # Parse the replacement HTML
     replacement_fragment = BeautifulSoup(replacement_html, 'html.parser')
     tag.replace_with(replacement_fragment)
+
+def has_ignored_class(tag, ignored_classes):
+    """
+    Check if the tag has any class present in ignored_classes.
+
+    :param tag: BeautifulSoup Tag object.
+    :param ignored_classes: List of class names to ignore.
+    :return: True if any class is in ignored_classes, False otherwise.
+    """
+    tag_classes = tag.get('class', [])  # Get the list of classes; default to empty list
+    return any(cls in ignored_classes for cls in tag_classes)
+
+
+def replace_a_tag_text(a_tag, new_text):
+    """
+    Replace the internal text of an <a> tag with new_text.
+    
+    :param a_tag: BeautifulSoup Tag object representing the <a> tag.
+    :param new_text: String containing the new text to replace the existing text.
+    """
+    #if not a_tag.name == 'a':
+    #    raise ValueError("The provided tag is not an <a> tag.")
+    
+    # Check if the <a> tag has a direct string
+    if a_tag.string and isinstance(a_tag.string, NavigableString):
+        a_tag.string.replace_with(new_text)
+    else:
+        # If there are multiple text nodes or nested tags, iterate and replace
+        for content in a_tag.contents:
+            if isinstance(content, NavigableString):
+                content.replace_with(new_text)
+            elif content.name:  # If the content is a tag (e.g., <span>, <strong>)
+                # Recursively replace text in nested tags
+                replace_a_tag_text(content, new_text)
 
 
 USER_AGENT = "ILCrawler/1.0 (+http://gbvolkoff.name/crawler)"
@@ -148,7 +188,7 @@ class IHTMLRetriever:
             return ""
 
 class WebCrawler:
-    def __init__(self, retriever, output_dir='output', images_dir='images', duplicate_tags=None, no_images=False, max_depth=5):
+    def __init__(self, retriever, output_dir='output', images_dir='images', duplicate_tags=None, no_images=False, max_depth=5, non_recursive_classes=[]):
         """
         Initialize the WebCrawler.
 
@@ -164,6 +204,7 @@ class WebCrawler:
         self.visited = set()
         self.base_netloc = urlparse(retriever.base_url).netloc
         self.max_depth = max_depth
+        self.non_recursive_classes = non_recursive_classes
 
         # Set to track processed element hashes
         self.processed_elements = set()
@@ -267,9 +308,9 @@ class WebCrawler:
         if current_depth > self.max_depth:
             logging.debug(f"Depth limit exceeded for {url}, skipping.")
             return ""
-        if url in self.visited:
-            logging.debug(f"Already visited {url}, skipping.")
-            return ""
+        #if url in self.visited:
+        #    logging.debug(f"Already visited {url}, skipping.")
+        #    return ""
         self.visited.add(url)
         logging.info(f"Processing: {url}")
         html = await self.retriever.retrieve_content(url)
@@ -280,11 +321,15 @@ class WebCrawler:
 
         tags_to_decompose = []
         # **Handle Duplicate Elements**
+        #if "here are only two ways to live your life" in str(soup):
+        #    print("FOUND!")
         for tag in soup.find_all(self.duplicate_tags):
             # Clean the tag to extract significant content
             # Compute hash of the tag's outer HTML
             tag_content = str(tag)
             cleaned_content = clean_tag_for_hashing(tag, INSIGNIFICANT_TAGS, base_url=url)
+            if not cleaned_content or cleaned_content == '':
+                continue
             tag_hash = hashlib.md5(cleaned_content.encode('utf-8')).hexdigest()
 
             if tag_hash in self.processed_elements:
@@ -300,6 +345,9 @@ class WebCrawler:
         for tag in tags_to_decompose:
             tag.decompose()
             logging.debug(f"Skipped duplicate element in {url}")
+
+        #if "here are only two ways to live your life" in str(soup):
+        #    print("FOUND!")
 
         if not self.no_images:
             # **Handle Images**
@@ -324,18 +372,17 @@ class WebCrawler:
                     continue
                 if link_url == url:
                     continue  # Skip self-referencing links
-
-                # Recursively process the linked page
-                linked_content = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
-                if linked_content:
-                    # Replace the link with ##LINK## followed by the linked content
-                    replacement_text = f"<div>{linked_content}</div>"
-                    replace_tag(a, replacement_text)
-                    # Replace newline characters with <br/> to preserve line breaks in HTML
-                    #replacement_html = replacement_text.replace('\n', '<br/>')
-                    # Parse the replacement HTML
-                    #replacement_fragment = BeautifulSoup(replacement_html, 'html.parser')
-                    #a.replace_with(replacement_fragment)
+                
+                if not has_ignored_class(a, self.non_recursive_classes):
+                    # Recursively process the linked page
+                    linked_content = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
+                    if linked_content:
+                        # Replace the link with ##LINK## followed by the linked content
+                        #replaced_object = BeautifulSoup(linked_content, 'html.parser')
+                        #replacement_text = '\n'.join(replaced_object.stripped_strings) #self.html_to_markdown(linked_content)
+                        #replace_a_tag_text(a, replacement_text)
+                        replacement_text = f"<div>{linked_content}</div>"
+                        replace_tag(a, replacement_text)
 
 
         # Convert the modified HTML to markdown
@@ -350,9 +397,9 @@ class WebCrawler:
         if filename is None:
             filename = self.sanitize_filename(url)
         #markdown = f"##LINK##: {url}\n\n"
-        markdown = self.html_to_markdown(soup)
+        #markdown = self.html_to_markdown(soup)
         #markdown += "\n======================================\n\n"
-        await self.save_markdown(filename, markdown, title=title, url=url)
+        #await self.save_markdown(filename, markdown, title=title, url=url)
         return content
 
     def html_to_markdown(self, soup):
@@ -389,7 +436,8 @@ class WebCrawler:
         await self.save_markdown(filename, markdown)
 
 async def main():
-    start_url = "http://books.toscrape.com/"  # Replace with your start URL
+    #start_url = "http://books.toscrape.com/"  # Replace with your start URL
+    start_url = "http://quotes.toscrape.com/"
     login_url = "https://example.com/login"  # Replace with your login URL if needed
     login_credentials = {
         "username": "your_username",
@@ -402,9 +450,10 @@ async def main():
         # await retriever.login()
         crawler = WebCrawler(
             retriever,
-            duplicate_tags=['div', 'p', 'table', 'span'],
+            duplicate_tags=['div', 'p', 'table'],
             no_images=True,
-            max_depth=8,
+            max_depth=4,
+            non_recursive_classes = ['tag']
             # Removed max_depth and max_concurrent
         )
         await crawler.crawl(start_url)
