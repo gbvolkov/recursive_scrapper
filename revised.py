@@ -24,69 +24,6 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-
-INSIGNIFICANT_TAGS = ['small', 'strong', 'em', 'span', 'b', 'i', 'u', 'sup', 'sub']
-
-def clean_tag_for_hashing(tag, insignificant_tags, base_url):
-    """
-    Очищает тег для хеширования.
-    """
-    tag_copy = tag.__copy__()
-
-    #for sub_tag in tag_copy.find_all(insignificant_tags):
-    #    sub_tag.unwrap()
-
-    #contains_link = False
-    cleaned_html = ""
-    for a_tag in tag_copy.find_all('a', href=True):
-        #contains_link = True
-        original_href = a_tag['href']
-        a_tag['href'] = urljoin(base_url, original_href)
-        cleaned_html += a_tag['href']
-
-    #if contains_link:
-    #    cleaned_html = re.sub(r'\s+', ' ', str(tag_copy).strip()).strip()
-    #else:
-    #    cleaned_html = ""
-
-    return cleaned_html
-
-def get_header(headers, key):
-    """
-    Получает значение заголовка независимо от регистра.
-    """
-    return next((value for k, value in headers.items() if k.lower() == key.lower()), '')
-
-def replace_tag(tag, replacement_text):
-    """
-    Заменяет HTML-тег на заданный текст или HTML.
-    """
-    #replacement_html = replacement_text.replace('\n', '<br/>')
-    #replacement_fragment = BeautifulSoup(replacement_html, 'html.parser')
-    tag.replace_with(replacement_text)
-
-def has_ignored_class(tag, ignored_classes):
-    """
-    Проверяет, содержит ли тег любой из игнорируемых классов.
-    """
-    tag_classes = tag.get('class', [])
-    return any(cls in ignored_classes for cls in tag_classes)
-
-def replace_a_tag_text(a_tag, new_text):
-    """
-    Заменяет внутренний текст <a> тега на новый текст.
-    """
-    if a_tag.string and isinstance(a_tag.string, NavigableString):
-        a_tag.string.replace_with(new_text)
-    else:
-        for content in a_tag.contents:
-            if isinstance(content, NavigableString):
-                content.replace_with(new_text)
-            elif content.name:
-                replace_a_tag_text(content, new_text)
-
-USER_AGENT = "ILCrawler/1.0 (+http://gbvolkoff.name/crawler)"
-
 class KBHTMLRetriever(IHTMLRetriever):
 
     async def login(self):
@@ -157,7 +94,7 @@ async def main():
     }
 
     # Инициализация retriever без логина
-    async with KBHTMLRetriever(base_url=start_url, user_agent=USER_AGENT, login_url=login_url, login_credentials=login_credentials) as retriever:
+    async with KBHTMLRetriever(base_url=start_url, login_url=login_url, login_credentials=login_credentials) as retriever:
         # Если требуется логин, раскомментируйте следующие строки:
         await retriever.login()
         crawler = KBWebCrawler(

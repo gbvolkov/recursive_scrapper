@@ -147,7 +147,7 @@ class IHTMLRetriever:
                 return ""
             html_content = await self.page.content()
 
-            content = self.clean_content(html_content)
+            content = await self.clean_content(html_content)
 
             return content
         except Exception as e:
@@ -262,7 +262,7 @@ class IWebCrawler:
             markdown = self.html_to_markdown(content)
             await self.save_markdown(filename, markdown)
 
-    async def remove_ignored_elements(self, soup):
+    async def remove_ignored_elements(self, soup, url):
         #Удаляем игнорируемые элементы
         for ignored_class in self.ignored_classes:
             ignored_elements = soup.find_all(class_=ignored_class)
@@ -270,7 +270,7 @@ class IWebCrawler:
                 ignored.decompose()
                 logging.debug(f"Удалён элемент с классом {ignored_class} из {url}")
 
-    async def get_navigators(self, soup):
+    async def get_navigators(self, soup, url):
         # Обработка навигационных элементов
         navigators = []
         for nav_class in self.navigation_classes:
@@ -366,21 +366,21 @@ class IWebCrawler:
             return ""
 
         soup = BeautifulSoup(html, 'html.parser')
-        await self.remove_ignored_elements(soup)
+        await self.remove_ignored_elements(soup, url)
 
         # Обработка навигационных элементов
-        navigators = await self.get_navigators(soup)
+        navigators = await self.get_navigators(soup, url)
 
         # Удаление дублирующихся элементов
         #await self.remove_duplicates(soup, url) # Не понятно, нужно ли
 
         # Обработка изображений
         if not self.no_images:
-            self.save_images(soup, url)
+            await self.save_images(soup, url)
 
         # Обработка ссылок для рекурсивного обхода
         if urlparse(url).netloc == self.base_netloc:
-            links = self.get_links(soup, url)
+            links = await self.get_links(soup, url)
             for link in links:
                 link_element = link[0]
                 link_url = link[1]
