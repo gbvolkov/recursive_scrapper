@@ -62,6 +62,7 @@ class IHTMLRetriever:
         Инициализация HTML Retriever.
         """
         self.base_url = base_url
+        
         self.login_url = login_url
         self.login_credentials = login_credentials or {}
         self.user_agent = user_agent or USER_AGENT
@@ -389,7 +390,12 @@ class IWebCrawler:
                 if not has_ignored_class(link_element, self.non_recursive_classes) and link_url not in self.visited:
                     linked_content = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
                     if linked_content:
+                        fname = self.sanitize_filename(link_url)
+                        with open(fname + ".ini", 'w', encoding='utf-8') as f:
+                            f.write(str(soup)) 
                         new_element = await self.replace_with_linked_content(soup, linked_content, link_url, link_element)
+                        with open(fname + ".repl", 'w', encoding='utf-8') as f:
+                            f.write(str(soup)) 
 
         # Извлечение и обработка ссылок из навигационного элемента
         for nav in navigators:
