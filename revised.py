@@ -8,8 +8,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from playwright.async_api import async_playwright
+#from markdownify import markdownify as md
 from bs4 import BeautifulSoup, NavigableString
-from markdownify import markdownify as md
+import html2text
 
 import logging
 
@@ -58,9 +59,9 @@ def replace_tag(tag, replacement_text):
     """
     Заменяет HTML-тег на заданный текст или HTML.
     """
-    replacement_html = replacement_text.replace('\n', '<br/>')
-    replacement_fragment = BeautifulSoup(replacement_html, 'html.parser')
-    tag.replace_with(replacement_fragment)
+    #replacement_html = replacement_text.replace('\n', '<br/>')
+    #replacement_fragment = BeautifulSoup(replacement_html, 'html.parser')
+    tag.replace_with(replacement_text)
 
 def has_ignored_class(tag, ignored_classes):
     """
@@ -100,7 +101,7 @@ class IHTMLRetriever:
 
     async def __aenter__(self):
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=True)
+        self.browser = await self.playwright.chromium.launch(headless=False)
         self.context = await self.browser.new_context(user_agent=self.user_agent)
         self.page = await self.context.new_page()
         return self
@@ -110,19 +111,53 @@ class IHTMLRetriever:
         await self.browser.close()
         await self.playwright.stop()
 
+    async def wait_for_page_load(self, timeout=30000):
+        try:
+            # Wait for the page to reach the 'load' state
+            await self.page.wait_for_load_state('load', timeout=timeout)
+            
+            # Wait for network connections to be idle
+            #await page.wait_for_load_state('networkidle', timeout=timeout)
+            
+            # Wait for any remaining dynamic content
+            await self.page.evaluate('''() => {
+                return new Promise((resolve) => {
+                    if (document.readyState === 'complete') {
+                        // Add a small delay to allow for any final rendering
+                        setTimeout(resolve, 1000);
+                    } else {
+                        window.addEventListener('load', () => setTimeout(resolve, 1000));
+                    }
+                })
+            }''')
+            
+            # Optional: Check for any loading indicators
+            loading_indicator_gone = await self.page.evaluate('''() => {
+                const loaders = document.querySelectorAll('.loading, .spinner, .loader');
+                return loaders.length === 0;
+            }''')
+            
+            if not loading_indicator_gone:
+                print(f"Warning: Possible loading indicators still present on {self.page.url}")
+            
+        except TimeoutError:
+            print(f"Timeout waiting for page to load: {self.page.url}")
+        
+        # Capture any console errors
+        self.page.on("console", lambda msg: print(f"Console {msg.type}: {msg.text}") if msg.type == "error" else None)
+
     async def login(self):
-        """
-        Выполняет вход на сайт при необходимости.
-        """
         if not self.login_url:
             return  # Вход не требуется
         try:
             await self.page.goto(self.login_url)
-            # Настройте селекторы под конкретную страницу логина
-            await self.page.fill('input#username', self.login_credentials.get('username', ''))
-            await self.page.fill('input#password', self.login_credentials.get('password', ''))
-            await self.page.click('button#login')  # Предполагается наличие кнопки с id 'login'
-            await self.page.wait_for_load_state('networkidle')
+            await self.wait_for_page_load(self.page)
+            await self.page.get_by_role("button").first.click()
+            await self.page.get_by_placeholder("Введите логин").fill(self.login_credentials['username'])
+            await self.page.get_by_placeholder("Введите пароль").click()
+            await self.page.get_by_placeholder("Введите пароль").fill(self.login_credentials['password'])
+            await self.page.get_by_role("button", name="войти").click()
+            await self.page.wait_for_timeout(2000)
             logging.info(f"Успешный вход на {self.login_url}")
         except Exception as e:
             logging.error(f"Не удалось выполнить вход на {self.login_url}: {e}")
@@ -140,12 +175,25 @@ class IHTMLRetriever:
             if status >= 400:
                 logging.warning(f"Получен статус {status} для {url}")
                 return ""
+            await self.wait_for_page_load(self.page)
+            await self.page.wait_for_timeout(2000)
+
             content_type = get_header(response.headers, 'Content-Type').lower()
             if 'text/html' not in content_type:
                 logging.warning(f"Пропуск не-HTML контента: {url}")
                 return ""
-            content = await self.page.content()
-            return content
+            html_content = await self.page.content()
+
+            soup = BeautifulSoup(html_content, 'html.parser')
+            for element in soup.find_all('div', class_='article-info editor__article-info'):
+                element.decompose()
+            for element in soup.find_all('div', class_='article-properties editor__properties'):
+                element.decompose()
+            content = soup.find('div', class_='editor__body-content editor-container')
+
+            return str(content)
+
+            #return content
         except Exception as e:
             logging.error(f"Не удалось получить {url}: {e}")
             return ""
@@ -161,25 +209,26 @@ class WebCrawler:
         self.output_dir = Path(output_dir)
         self.no_images = no_images
         self.images_dir = self.output_dir / images_dir
-        self.visited = set()
         self.base_netloc = urlparse(retriever.base_url).netloc
         self.max_depth = max_depth
         self.non_recursive_classes = non_recursive_classes
         self.ignored_classes = ignored_classes or []
 
-        # Отслеживание обработанных элементов
-        self.processed_elements = set()
-
         # Навигационные классы
         self.navigation_classes = navigation_classes or []
-        self.processed_navigation = set()
 
         # Список тегов для проверки дубликатов
         self.duplicate_tags = duplicate_tags or ['div', 'p', 'table']
+        self.initialize()
 
         # Создание директорий для вывода и изображений
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.images_dir.mkdir(parents=True, exist_ok=True)
+
+    def initialize(self):
+        self.visited = set()
+        self.processed_elements = set()
+        self.processed_navigation = set()
 
     def sanitize_filename(self, url):
         """
@@ -252,11 +301,12 @@ class WebCrawler:
         if filename is None:
             filename = self.sanitize_filename(link_url)
         if link_url not in self.visited:
-            self.visited.add(link_url)
+            #self.visited.add(link_url)
             logging.info(f"Обработка навигационной ссылки: {link_url}")
             content = await self.process_page(link_url, filename=filename, current_depth=current_depth)
             markdown = self.html_to_markdown(content)
             await self.save_markdown(filename, markdown)
+            await self.save_markdown(filename + ".html", content)
 
     async def process_page(self, url, filename=None, current_depth=0):
         """
@@ -265,16 +315,17 @@ class WebCrawler:
         if current_depth > self.max_depth:
             logging.debug(f"Превышена максимальная глубина для {url}, пропуск.")
             return ""
-        #if url in self.visited:
-        #    logging.debug(f"Уже посещена {url}, пропуск.")
-        #    return ""
-        #self.visited.add(url)
+        if url in self.visited:
+            logging.debug(f"Уже посещена {url}, пропуск.")
+            return ""
+        self.visited.add(url)
         logging.info(f"Обработка: {url} глубина {current_depth}")
         html = await self.retriever.retrieve_content(url)
         if not html:
             return ""
 
         soup = BeautifulSoup(html, 'html.parser')
+
 
         #Удаляем игнорируемые элементы
         for ignored_class in self.ignored_classes:
@@ -344,8 +395,41 @@ class WebCrawler:
                     if link_url not in self.visited:
                         linked_content = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
                         if linked_content:
-                            replacement_text = f"<div>{linked_content}</div>"
-                            replace_tag(a, replacement_text)
+                            wrapper = soup.new_tag('div')
+                            wrapper['class'] = 'embedded-content'
+                            start = f"\n\n##START_LINKED_CONTENT_FROM: {link_url}\n"
+                            wrapper.append(BeautifulSoup(start, "html.parser"))
+                            
+                            wrapper.append(BeautifulSoup(linked_content, "html.parser"))
+                            end = f"\n##END_LINKED_CONTENT_FROM: {link_url}\n\n"
+                            wrapper.append(BeautifulSoup(end, "html.parser"))
+                            #replacement_text = start + linked_content + end
+                            #new_elem = BeautifulSoup(replacement_text, "lxml")
+                            replace_tag(a, wrapper)
+            #так же обрабатываем дополнительные ссылки
+            nested_content = soup.find('div', class_=['scrollbar', 'nested-articles__content', 'ps'])
+            if nested_content:
+                li_elements = nested_content.find_all('li')
+                for li in li_elements:
+                    keyname = li.get('keyname')
+                    ancestorids = li.get('ancestorids')
+                    if keyname and ancestorids:
+                        link_url = f"{base_url}/space/{global_id}/article/{keyname}"
+                        if link_url not in self.visited:
+                            linked_content = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
+                            if linked_content:
+                                wrapper = soup.new_tag('div')
+                                wrapper['class'] = 'embedded-content'
+                                start = f"\n\n##START_LINKED_CONTENT_FROM: {link_url}\n"
+                                wrapper.append(BeautifulSoup(start, "html.parser"))
+                                
+                                wrapper.append(BeautifulSoup(linked_content, "html.parser"))
+                                end = f"\n##END_LINKED_CONTENT_FROM: {link_url}\n\n"
+                                wrapper.append(BeautifulSoup(end, "html.parser"))
+                                #replacement_text = start + linked_content + end
+                                #new_elem = BeautifulSoup(replacement_text, "lxml")
+                                replace_tag(li, wrapper)
+                                
 
         # Извлечение и обработка ссылок из навигационного элемента
         for nav in navigators:
@@ -357,7 +441,14 @@ class WebCrawler:
 
         # Конвертация изменённого HTML в Markdown
         #content = self.html_to_markdown(soup)
+        #delimiter = soup.new_tag('p')
+        #delimstr = f"<div><p><br/><br/>END OF {url}<br/><br/><br/><br/></p></div>"
+        #delimiter = BeautifulSoup(delimstr, 'html.parser')
+        #if soup.body is None:
+        #    soup.append(delimiter)
+        #else:
         content = str(soup)
+        #    soup.body.append(delimiter)
 
         # Извлечение заголовка для метаданных
         title = soup.title.string.strip() if soup.title and soup.title.string else self.sanitize_filename(url)
@@ -373,7 +464,10 @@ class WebCrawler:
         Конвертирует HTML в Markdown с помощью markdownify.
         """
         html = str(soup)
-        markdown = md(html, heading_style="ATX")
+        #markdown = md(html, heading_style="ATX")
+        converter = html2text.HTML2Text()
+        converter.body_width = 0
+        markdown = converter.handle(html)
         markdown = markdown.strip() if markdown else ""
         markdown = markdown.replace('\t', ' ')
         markdown = re.sub(r'[ ]{2,}', ' ', markdown)
@@ -395,30 +489,66 @@ class WebCrawler:
         #await self.save_markdown(filename, markdown)
         await self.process_navigation_link(start_url, filename=filename)
 
+base_url = "https://kb.ileasing.ru"
+global_id = "a100dc8d-3af0-418c-8634-f09f1fdb06f2"  # Replace with actual global ID
+root_article = "af494df7-9560-4cb8-96d4-5b577dd4422e"
+
+from dotenv import load_dotenv,dotenv_values
+import os
+from pathlib import Path
+documents_path = Path.home() / ".env"
+load_dotenv(os.path.join(documents_path, 'gv.env'))
+USERNAME = '7810155'
+PASSWORD = os.environ.get('IL_PWD')
+
 async def main():
     # Задайте ваш стартовый URL
-    start_url = "http://books.toscrape.com/index.html"
+    start_url = "https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/af494df7-9560-4cb8-96d4-5b577dd4422e"
     #start_url = "https://quotes.toscrape.com/page/1/"
-    login_url = "https://example.com/login"  # Замените на ваш URL для входа, если необходимо
+    login_url = f"{base_url}/auth/sign-in?redirect=%2Fspace%2F{global_id}%2Farticle%2F{root_article}"
+    #login_url = "https://example.com/login"  # Замените на ваш URL для входа, если необходимо
     login_credentials = {
-        "username": "your_username",
-        "password": "your_password"
+        "username": USERNAME,
+        "password": PASSWORD
     }
 
     # Инициализация retriever без логина
-    async with IHTMLRetriever(base_url=start_url, user_agent=USER_AGENT) as retriever:
+    async with IHTMLRetriever(base_url=start_url, user_agent=USER_AGENT, login_url=login_url, login_credentials=login_credentials) as retriever:
         # Если требуется логин, раскомментируйте следующие строки:
-        # await retriever.login()
+        await retriever.login()
         crawler = WebCrawler(
             retriever,
             duplicate_tags=['div', 'p', 'table'],
             no_images=True,
-            max_depth=1,
+            max_depth=8,
             non_recursive_classes=['tag'],
             navigation_classes=['side_categories', 'pager'],  # Ваши навигационные классы
             ignored_classes = ['footer', 'row header-box', 'breadcrumb', 'header container-fluid', 'icon-star', 'image_container']
         )
-        await crawler.crawl(start_url)
+        start_urls = [
+            #FAQ
+            'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/e7a19a56-d067-4023-b259-94284ec4e16b',
+            #'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/a1038bbc-e5d9-4b5a-9482-2739c19cb6cb',
+            #'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/3fdb4f97-2246-4b9e-b477-e9d7d8a2eb86',
+            #'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/dd64ab73-50ea-4d48-83f0-8dcef88512cb',
+            # Инструкции ОИТ
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/af494df7-9560-4cb8-96d4-5b577dd4422e",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/508e24c5-aa23-419d-9251-69a2bf096706",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/bb0c7555-f7b3-48a0-9fa1-f3708842ca1a",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/0ccc2abb-b7cd-44c5-bddb-91e055e545cd",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/26df2ad9-29b3-4ec9-82b4-fd21fcd14dec",
+            # Пользовательские инструкции
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/602810e3-eb3c-47b8-bbfe-44be5c33566b",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/4f81f5fe-cd15-492f-8aa0-66b3e4313a85",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/7c72943d-3f2d-41f9-a1ec-db027880d615",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/8e30fae5-f94f-4efd-a633-997a19cd891c",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/3b04ba0f-e24d-4ff6-ba59-60b869b67b16",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/916983d3-f0e5-48f0-a1ab-4ec104035963",
+            #"https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/3edc1530-3fbe-4a9e-8ea2-6876a2a63683"
+        ]
+        for start_url in start_urls:
+            crawler.initialize()
+            await crawler.crawl(start_url)
 
 if __name__ == "__main__":
     asyncio.run(main())
