@@ -330,7 +330,7 @@ class IWebCrawler:
 
     async def get_links(self, soup, url):
         links = await self.get_standard_links(soup, url)
-        links.append(await self.get_custom_links(soup, url))
+        links.extend(await self.get_custom_links(soup, url))
         return links
 
     async def replace_with_linked_content(self, soup, linked_content, link_url, link_element):
