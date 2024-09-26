@@ -421,8 +421,16 @@ class IWebCrawler:
         markdown = re.sub(r'[ ]{2,}', ' ', markdown)
         markdown = re.sub(r'[ ]{1,}+\n{1,}', '\n', markdown)
         markdown = re.sub(r'\n{2,}', '\n', markdown)
-        markdown = re.sub(r'(##START_LINKED_CONTENT_FROM:.*?)(\S)', r'\1\n\2', markdown)
-        markdown = re.sub(r'(\S)(##END_LINKED_CONTENT_FROM:.*?)', r'\1\n\2', markdown)
+        markdown = re.sub(
+            r'(\n*)(##START_LINKED_CONTENT_FROM:.*?)(\n*)',
+            r'\n\n===========================\n\1\2\n',
+            markdown
+        )
+        markdown = re.sub(
+            r'(\n*)(##END_LINKED_CONTENT_FROM:.*?)(\n*)',
+            r'\n\1\2\n===========================\n\n',
+            markdown
+    )
 
         return markdown
 
