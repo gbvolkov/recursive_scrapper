@@ -73,7 +73,7 @@ class IHTMLRetriever:
 
     async def __aenter__(self):
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=False)
+        self.browser = await self.playwright.chromium.launch(headless=True)
         self.context = await self.browser.new_context(user_agent=self.user_agent)
         self.page = await self.context.new_page()
         return self
@@ -156,7 +156,7 @@ class IHTMLRetriever:
             return ""
 
 class IWebCrawler:
-    def __init__(self, retriever, output_dir='output', images_dir='images', duplicate_tags=None, no_images=False, max_depth=5, non_recursive_classes=None, navigation_classes=None, ignored_classes=None):
+    def __init__(self, retriever, output_dir='output', images_dir='images', duplicate_tags=None, no_images=False, max_depth=5, non_recursive_classes=None, navigation_classes=None, ignored_classes=None, allowed_domains = None):
         """
         Инициализация WebCrawler.
         """
@@ -168,6 +168,7 @@ class IWebCrawler:
         self.max_depth = max_depth
         self.non_recursive_classes = non_recursive_classes or []
         self.ignored_classes = ignored_classes or []
+        self.allowed_domains = allowed_domains or []
 
         # Навигационные классы
         self.navigation_classes = navigation_classes or []
@@ -259,9 +260,10 @@ class IWebCrawler:
             filename = self.sanitize_filename(link_url)
         if link_url not in self.visited:
             logging.info(f"Обработка навигационной ссылки: {link_url}")
-            content = await self.process_page(link_url, filename=filename, current_depth=current_depth)
+            (content, links, images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth, check_duplicates_depth=3)
             markdown = self.html_to_markdown(content)
             await self.save_markdown(filename, markdown)
+        return (content, markdown, filename, links, images)
 
     async def remove_ignored_elements(self, soup, url):
         #Удаляем игнорируемые элементы
@@ -308,31 +310,35 @@ class IWebCrawler:
         for tag in tags_to_decompose:
             tag.decompose()
             logging.debug(f"Дублирующий элемент удалён из {url}")
-        return
+        
 
     async def get_images_elements(self, soup):
         return [(img, img['src']) for img in soup.find_all('img') if img.get('src')]
 
     async def save_images(self, soup, url):
         # Обработка изображений
+        images = []
         for img in await self.get_images_elements(soup):
             img_element = img[0]
             img_url = urljoin(url, img[1])
             img_filename = await self.save_image(img_url)
             if img_filename:
-                replace_tag(img_element, f"##IMAGE## {img_filename}")
+                images.append(img_element)
+                replace_tag(img_element, f"##IMAGE## {img_filename}\n")
+        return images
 
-    async def get_custom_links(self, soup, url):
-        return []
+    #async def get_custom_links(self, soup, url):
+    #    return []
 
-    async def get_standard_links(self, soup, url):
-        return [(link, urljoin(url, link['href'])) for link in soup.find_all('a', href=True) if link.get('href')]
+    #async def get_standard_links(self, soup, url):
+    #    return [(link, urljoin(url, link['href'])) for link in soup.find_all('a', href=True) if link.get('href')]
 
 
     async def get_links(self, soup, url):
-        links = await self.get_standard_links(soup, url)
-        links.extend(await self.get_custom_links(soup, url))
-        return links
+        return [(link, urljoin(url, link['href'])) for link in soup.find_all('a', href=True) if link.get('href')] 
+        #links = await self.get_standard_links(soup, url)
+        #links.extend(await self.get_custom_links(soup, url))
+        #return links
 
     async def replace_with_linked_content(self, soup, linked_content, link_url, link_element):
         wrapper = soup.new_tag('div')
@@ -349,6 +355,14 @@ class IWebCrawler:
         replace_tag(link_element, wrapper)
         return wrapper
 
+    async def process_navigators(self, navigators, url, current_depth, filename):
+        # Извлечение и обработка ссылок из навигационного элемента
+        for nav in navigators:
+            for a in nav.find_all('a', href=True):
+                link_url = urljoin(url, a['href'])
+                if link_url not in self.visited:
+                    logging.info(f"Обрабатываю навигационную ссылку {a['href']} на {link_url}")
+                    await self.process_navigation_link(link_url, current_depth=current_depth, filename=filename)
 
     async def process_page(self, url, filename=None, current_depth=0, check_duplicates_depth=-1):
         """
@@ -356,15 +370,15 @@ class IWebCrawler:
         """
         if current_depth > self.max_depth:
             logging.debug(f"Превышена максимальная глубина для {url}, пропуск.")
-            return ""
+            return ("", [], [], '')
         if url in self.visited and check_duplicates_depth >= current_depth:
             logging.debug(f"Уже посещена {url}, пропуск.")
-            return ""
+            return ("", [], [], '')
         self.visited.add(url)
         logging.info(f"Обработка: {url}. Глубина {current_depth}")
         html = await self.retriever.retrieve_content(url)
         if not html:
-            return ""
+            return ("", [], [], '')
 
         soup = BeautifulSoup(html, 'html.parser')
         await self.remove_ignored_elements(soup, url)
@@ -376,36 +390,37 @@ class IWebCrawler:
         #await self.remove_duplicates(soup, url) # Не понятно, нужно ли
 
         # Обработка изображений
+        images = []
         if not self.no_images:
-            await self.save_images(soup, url)
+            images = await self.save_images(soup, url)
 
+        links = []
         # Обработка ссылок для рекурсивного обхода
         if urlparse(url).netloc == self.base_netloc:
             links = await self.get_links(soup, url)
             for link in links:
                 link_element = link[0]
                 link_url = link[1]
-                if not link_url.startswith(('http://', 'https://')) or link_url == url:
+                if not link_url.startswith(('http://', 'https://')) or link_url == url or (urlparse(link_url).netloc not in self.allowed_domains and urlparse(link_url).netloc != self.base_netloc):
                     continue
                 if not has_ignored_class(link_element, self.non_recursive_classes) and link_url not in self.visited:
-                    linked_content = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
+                    (linked_content, linked_links, linked_images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
+                    links.extend(linked_links)
+                    images.extend(linked_images)
                     if linked_content:
-                        fname = self.sanitize_filename(link_url)
                         new_element = await self.replace_with_linked_content(soup, linked_content, link_url, link_element)
 
         # Извлечение и обработка ссылок из навигационного элемента
-        for nav in navigators:
-            for a in nav.find_all('a', href=True):
-                link_url = urljoin(url, a['href'])
-                if link_url not in self.visited:
-                    logging.info(f"Обрабатываю навигационную ссылку {a['href']} на {link_url}")
-                    await self.process_navigation_link(link_url, current_depth=current_depth, filename=filename)
+        await self.process_navigators(navigators, url, current_depth, filename)
 
-        content = str(soup)
+        if soup:
+            content = str(soup)
+        else:
+            content = ""
 
         # Извлечение заголовка для метаданных
         title = soup.title.string.strip() if soup.title and soup.title.string else self.sanitize_filename(url)
-        return content
+        return (content, links, images, title)
 
     def html_to_markdown(self, soup):
         """

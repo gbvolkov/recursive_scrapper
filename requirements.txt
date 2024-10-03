@@ -8,3 +8,6 @@ markdownify>=0.9.3  # If integrating markdownify
 python-dotenv
 lxml
 html2text
+pandas
+transformers
+torch
