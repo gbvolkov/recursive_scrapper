@@ -114,9 +114,7 @@ class KBWebCrawler2CSV(IWebCrawler):
         await super().crawl(start_url)
         print(f"Scraping completed. {len(self.articles_data)} articles processed.")
         df = pd.DataFrame(self.articles_data)
-        isheader=True
-        if os.path.exists('./output/articles_data.csv'):
-            isheader=False
+        isheader = not os.path.exists('./output/articles_data.csv')
         df.to_csv('./output/articles_data.csv', index=False, mode='a', header=isheader)
         #print("Data saved to ./content/articles_data.csv")
         #print("Images saved to ./content/images/")
