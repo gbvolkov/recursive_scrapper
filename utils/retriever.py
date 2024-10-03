@@ -323,7 +323,7 @@ class IWebCrawler:
             img_url = urljoin(url, img[1])
             img_filename = await self.save_image(img_url)
             if img_filename:
-                images.append(img_element)
+                images.append(img_filename)
                 replace_tag(img_element, f"##IMAGE## {img_filename}\n")
         return images
 
@@ -363,6 +363,9 @@ class IWebCrawler:
                 if link_url not in self.visited:
                     logging.info(f"Обрабатываю навигационную ссылку {a['href']} на {link_url}")
                     await self.process_navigation_link(link_url, current_depth=current_depth, filename=filename)
+
+    def get_title(self, soup, url):
+        return soup.title.string.strip() if soup.title and soup.title.string else self.sanitize_filename(url)
 
     async def process_page(self, url, filename=None, current_depth=0, check_duplicates_depth=-1):
         """
@@ -419,7 +422,7 @@ class IWebCrawler:
             content = ""
 
         # Извлечение заголовка для метаданных
-        title = soup.title.string.strip() if soup.title and soup.title.string else self.sanitize_filename(url)
+        title = self.get_title(soup, url)
         return (content, links, images, title)
 
     def html_to_markdown(self, soup):

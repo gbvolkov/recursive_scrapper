@@ -87,12 +87,12 @@ class KBWebCrawler2CSV(IWebCrawler):
     async def process_page(self, url, filename=None, current_depth=0, check_duplicates_depth=-1):
         (content, links, images, title) = await super().process_page(url, filename, current_depth, check_duplicates_depth)
         markdown = self.html_to_markdown(content)
-        summary = summarise(markdown, max_length=256, min_length=64, do_sample=False),
+        summary = markdown[:256] # summarise(markdown, max_length=256, min_length=64, do_sample=False),
 
         self.articles_data.append({
             'no': 1,
             'systems': '',
-            'problem': summary,
+            'problem': title,
             'solution': summary,
             'samples': '',
             'links': links,
@@ -101,6 +101,14 @@ class KBWebCrawler2CSV(IWebCrawler):
             'refs': markdown,
             #'images': ', '.join(images)
         })
+        return (content, links, images, title)
+
+    def get_title(self, soup, url):
+        if title := soup.find(
+            'p', class_=['editor-title__text']
+        ):
+            return title.text
+        return super().get_title(soup, url)
 
     async def crawl(self, start_url):
         await super().crawl(start_url)
