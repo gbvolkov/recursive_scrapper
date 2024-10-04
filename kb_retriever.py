@@ -19,11 +19,12 @@ from utils.retriever import IHTMLRetriever, IWebCrawler, replace_tag
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler()
-    ]
+        , logging.FileHandler('kb_retriever.log')
+    ],
 )
 class KBHTMLRetriever(IHTMLRetriever):
 
@@ -51,8 +52,12 @@ class KBHTMLRetriever(IHTMLRetriever):
         for element in soup.find_all('div', class_='article-properties editor__properties'):
             element.decompose()
         content = soup.find('div', class_='editor__body-content editor-container')
-
-        return str(content)
+        
+        if content:
+            return str(content)
+        else:
+            logging.warning(f"Не удалось получить контент для {self.page.url}") 
+            return content
 
 class KBWebCrawler2CSV(IWebCrawler):
 
@@ -88,6 +93,8 @@ class KBWebCrawler2CSV(IWebCrawler):
         (content, links, images, title) = await super().process_page(url, filename, current_depth, check_duplicates_depth)
         if content:
             markdown = self.html_to_markdown(content)
+            if markdown == 'None':
+                print(f'{url} returned None for content {content}\n')
             summary = markdown[:256] # summarise(markdown, max_length=256, min_length=64, do_sample=False),
             no = len(self.articles_data)+1
             self.articles_data.append({

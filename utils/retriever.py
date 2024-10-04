@@ -91,11 +91,15 @@ class IHTMLRetriever:
             # Wait for any remaining dynamic content
             await self.page.evaluate('''() => {
                 return new Promise((resolve) => {
-                    if (document.readyState === 'complete') {
-                        // Add a small delay to allow for any final rendering
-                        setTimeout(resolve, 1000);
-                    } else {
-                        window.addEventListener('load', () => setTimeout(resolve, 1000));
+                    try {
+                        if (document.readyState === 'complete') {
+                            // Add a small delay to allow for any final rendering
+                            setTimeout(resolve, 1000);
+                        } else {
+                            window.addEventListener('load', () => setTimeout(resolve, 1000));
+                        }
+                    } catch (error) {
+                        resolve();
                     }
                 })
             }''')
@@ -107,10 +111,10 @@ class IHTMLRetriever:
             }''')
             
             if not loading_indicator_gone:
-                print(f"Warning: Possible loading indicators still present on {self.page.url}")
+                logging.warning(f"Warning: Possible loading indicators still present on {self.page.url}")
             
         except TimeoutError:
-            print(f"Timeout waiting for page to load: {self.page.url}")
+            logging.error(f"Timeout waiting for page to load: {self.page.url}")
         
         # Capture any console errors
         self.page.on("console", lambda msg: print(f"Console {msg.type}: {msg.text}") if msg.type == "error" else None)
@@ -261,8 +265,9 @@ class IWebCrawler:
         if link_url not in self.visited:
             logging.info(f"Обработка навигационной ссылки: {link_url}")
             (content, links, images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth, check_duplicates_depth=3)
-            markdown = self.html_to_markdown(content)
-            await self.save_markdown(filename, markdown)
+            if content is not None:
+                markdown = self.html_to_markdown(content)
+                await self.save_markdown(filename, markdown)
         return (content, markdown, filename, links, images)
 
     async def remove_ignored_elements(self, soup, url):
