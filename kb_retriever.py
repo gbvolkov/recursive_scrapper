@@ -100,6 +100,7 @@ class KBWebCrawler2CSV(IWebCrawler):
                 'image_links': [],
                 'local_image_paths': ', '.join(images),
                 'refs': markdown,
+                'url': url,
                 #'images': ', '.join(images)
             })
         return (content, links, images, title)

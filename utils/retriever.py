@@ -367,6 +367,19 @@ class IWebCrawler:
     def get_title(self, soup, url):
         return soup.title.string.strip() if soup.title and soup.title.string else self.sanitize_filename(url)
 
+    async def process_links(self, links, url, soup, current_depth, images, filename):
+        for link in links:
+            link_element = link[0]
+            link_url = link[1]
+            if not link_url.startswith(('http://', 'https://')) or link_url == url or (urlparse(link_url).netloc not in self.allowed_domains and urlparse(link_url).netloc != self.base_netloc):
+                continue
+            if not has_ignored_class(link_element, self.non_recursive_classes) and link_url not in self.visited:
+                (linked_content, linked_links, linked_images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
+                if linked_content:
+                    links.extend(linked_links)
+                    images.extend(linked_images)
+                    new_element = await self.replace_with_linked_content(soup, linked_content, link_url, link_element)
+
     async def process_page(self, url, filename=None, current_depth=0, check_duplicates_depth=-1):
         """
         Обрабатывает отдельную страницу: получает контент, обрабатывает изображения и ссылки, сохраняет в Markdown.
@@ -389,38 +402,28 @@ class IWebCrawler:
         # Обработка навигационных элементов
         navigators = await self.get_navigators(soup, url)
 
-        # Удаление дублирующихся элементов
-        #await self.remove_duplicates(soup, url) # Не понятно, нужно ли
-
-        # Обработка изображений
-        images = []
-        if not self.no_images:
-            images = await self.save_images(soup, url)
-
+        images = [] if self.no_images else await self.save_images(soup, url)
         links = []
         # Обработка ссылок для рекурсивного обхода
         if urlparse(url).netloc == self.base_netloc:
             links = await self.get_links(soup, url)
-            for link in links:
-                link_element = link[0]
-                link_url = link[1]
-                if not link_url.startswith(('http://', 'https://')) or link_url == url or (urlparse(link_url).netloc not in self.allowed_domains and urlparse(link_url).netloc != self.base_netloc):
-                    continue
-                if not has_ignored_class(link_element, self.non_recursive_classes) and link_url not in self.visited:
-                    (linked_content, linked_links, linked_images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
-                    if linked_content:
-                        links.extend(linked_links)
-                        images.extend(linked_images)
-                        new_element = await self.replace_with_linked_content(soup, linked_content, link_url, link_element)
+            self.process_links(links, url, soup, current_depth, images, filename)
+            #for link in links:
+            #    link_element = link[0]
+            #    link_url = link[1]
+            #    if not link_url.startswith(('http://', 'https://')) or link_url == url or (urlparse(link_url).netloc not in self.allowed_domains and urlparse(link_url).netloc != self.base_netloc):
+            #        continue
+            #    if not has_ignored_class(link_element, self.non_recursive_classes) and link_url not in self.visited:
+            #        (linked_content, linked_links, linked_images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
+            #        if linked_content:
+            #            links.extend(linked_links)
+            #            images.extend(linked_images)
+            #            new_element = await self.replace_with_linked_content(soup, linked_content, link_url, link_element)
 
         # Извлечение и обработка ссылок из навигационного элемента
         await self.process_navigators(navigators, url, current_depth, filename)
 
-        if soup:
-            content = str(soup)
-        else:
-            content = None
-
+        content = str(soup) if soup else None
         # Извлечение заголовка для метаданных
         title = self.get_title(soup, url)
         return (content, links, images, title)
