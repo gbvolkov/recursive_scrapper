@@ -20,7 +20,8 @@ os.environ['HF_HUB_DISABLE_SSL'] = 'true'
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
 
 model = 'RussianNLP/FRED-T5-Summarizer'
-local_model = '../models/FRED-T5-Summarizer'
+#local_model = '../models/FRED-T5-Summarizer'
+local_model = model
 tokenizer = AutoTokenizer.from_pretrained(local_model)
 llm = AutoModelForSeq2SeqLM.from_pretrained(local_model)
 
@@ -49,7 +50,8 @@ def summarise(text, max_length=1024, min_length=256, do_sample=False):
     return result
 
 if __name__ == "__main__":
-    df = pd.read_csv('./content/articles_data.csv', encoding="utf-8")
-    df['refs'], df['solution'] = df['solution'], df['solution'].apply(lambda x: summarise(x, max_length=256, min_length=64, do_sample=False))
-    df.to_csv('./content/articles_data_summ.csv', index=False)
+    df = pd.read_csv('./output/articles_data.csv', encoding="utf-8")
+    df = df[df['refs'].notnull() & (df['refs'] != '')]
+    df['solution'] = df['refs'].apply(lambda x: summarise(x, max_length=256, min_length=64, do_sample=False))
+    df.to_csv('./output/articles_data_summ.csv', index=False)
 
