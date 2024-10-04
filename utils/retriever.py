@@ -373,15 +373,15 @@ class IWebCrawler:
         """
         if current_depth > self.max_depth:
             logging.debug(f"Превышена максимальная глубина для {url}, пропуск.")
-            return ("", [], [], '')
+            return (None, [], [], '')
         if url in self.visited and check_duplicates_depth >= current_depth:
             logging.debug(f"Уже посещена {url}, пропуск.")
-            return ("", [], [], '')
+            return (None, [], [], '')
         self.visited.add(url)
         logging.info(f"Обработка: {url}. Глубина {current_depth}")
         html = await self.retriever.retrieve_content(url)
         if not html:
-            return ("", [], [], '')
+            return (None, [], [], '')
 
         soup = BeautifulSoup(html, 'html.parser')
         await self.remove_ignored_elements(soup, url)
@@ -408,9 +408,9 @@ class IWebCrawler:
                     continue
                 if not has_ignored_class(link_element, self.non_recursive_classes) and link_url not in self.visited:
                     (linked_content, linked_links, linked_images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
-                    links.extend(linked_links)
-                    images.extend(linked_images)
                     if linked_content:
+                        links.extend(linked_links)
+                        images.extend(linked_images)
                         new_element = await self.replace_with_linked_content(soup, linked_content, link_url, link_element)
 
         # Извлечение и обработка ссылок из навигационного элемента
@@ -419,7 +419,7 @@ class IWebCrawler:
         if soup:
             content = str(soup)
         else:
-            content = ""
+            content = None
 
         # Извлечение заголовка для метаданных
         title = self.get_title(soup, url)

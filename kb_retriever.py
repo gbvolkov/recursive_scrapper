@@ -15,7 +15,7 @@ import html2text
 import logging
 
 from utils.retriever import IHTMLRetriever, IWebCrawler, replace_tag
-from utils.kb_summariser import summarise
+#from utils.kb_summariser import summarise
 
 # Настройка логирования
 logging.basicConfig(
@@ -86,21 +86,22 @@ class KBWebCrawler2CSV(IWebCrawler):
 
     async def process_page(self, url, filename=None, current_depth=0, check_duplicates_depth=-1):
         (content, links, images, title) = await super().process_page(url, filename, current_depth, check_duplicates_depth)
-        markdown = self.html_to_markdown(content)
-        summary = markdown[:256] # summarise(markdown, max_length=256, min_length=64, do_sample=False),
-
-        self.articles_data.append({
-            'no': 1,
-            'systems': '',
-            'problem': title,
-            'solution': summary,
-            'samples': '',
-            'links': links,
-            'image_links': [],
-            'local_image_paths': ', '.join(images),
-            'refs': markdown,
-            #'images': ', '.join(images)
-        })
+        if content:
+            markdown = self.html_to_markdown(content)
+            summary = markdown[:256] # summarise(markdown, max_length=256, min_length=64, do_sample=False),
+            no = len(self.articles_data)+1
+            self.articles_data.append({
+                'no': no,
+                'systems': '',
+                'problem': title,
+                'solution': summary,
+                'samples': '',
+                'links': links,
+                'image_links': [],
+                'local_image_paths': ', '.join(images),
+                'refs': markdown,
+                #'images': ', '.join(images)
+            })
         return (content, links, images, title)
 
     def get_title(self, soup, url):
