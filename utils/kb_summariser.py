@@ -39,12 +39,15 @@ def summarise(text, max_length=1024, min_length=256, do_sample=False):
     global processed
     if length < max_length:
         result = text
+    elif summary := summarizer(
+        text,
+        max_length=length // 2,
+        min_length=min_length,
+        do_sample=do_sample,
+    ):
+        result = summary[0]['summary_text'].strip()
     else:
-        summary = summarizer(text, max_length=int(length/2), min_length=min_length, do_sample=do_sample)
-        if summary:
-            result = summary[0]['summary_text'].strip()
-        else:
-            result = text[:max_length]
+        result = text[:max_length]
     logger.info(f'{processed}: {text[:64]}({len(text)}:{length})==>{result[:64]}({len(result)})')
     processed = processed + 1
     return result
