@@ -315,6 +315,9 @@ class IWebCrawler:
     async def get_images_elements(self, soup):
         return [(img, img['src']) for img in soup.find_all('img') if img.get('src')]
 
+    def replace_image_element(self, soup, img_element, url, img_filename):
+        replace_tag(img_element, f"##IMAGE## {img_filename}\n")
+
     async def save_images(self, soup, url):
         # Обработка изображений
         images = []
@@ -324,7 +327,8 @@ class IWebCrawler:
             img_filename = await self.save_image(img_url)
             if img_filename:
                 images.append(img_filename)
-                replace_tag(img_element, f"##IMAGE## {img_filename}\n")
+                self.replace_image_element(soup, img_element, url, img_filename)
+                #replace_tag(img_element, f"##IMAGE## {img_filename}\n")
         return images
 
     #async def get_custom_links(self, soup, url):
@@ -407,18 +411,18 @@ class IWebCrawler:
         # Обработка ссылок для рекурсивного обхода
         if urlparse(url).netloc == self.base_netloc:
             links = await self.get_links(soup, url)
-            self.process_links(links, url, soup, current_depth, images, filename)
-            #for link in links:
-            #    link_element = link[0]
-            #    link_url = link[1]
-            #    if not link_url.startswith(('http://', 'https://')) or link_url == url or (urlparse(link_url).netloc not in self.allowed_domains and urlparse(link_url).netloc != self.base_netloc):
-            #        continue
-            #    if not has_ignored_class(link_element, self.non_recursive_classes) and link_url not in self.visited:
-            #        (linked_content, linked_links, linked_images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
-            #        if linked_content:
-            #            links.extend(linked_links)
-            #            images.extend(linked_images)
-            #            new_element = await self.replace_with_linked_content(soup, linked_content, link_url, link_element)
+            #self.process_links(links, url, soup, current_depth, images, filename)
+            for link in links:
+                link_element = link[0]
+                link_url = link[1]
+                if not link_url.startswith(('http://', 'https://')) or link_url == url or (urlparse(link_url).netloc not in self.allowed_domains and urlparse(link_url).netloc != self.base_netloc):
+                    continue
+                if not has_ignored_class(link_element, self.non_recursive_classes) and link_url not in self.visited:
+                    (linked_content, linked_links, linked_images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
+                    if linked_content:
+                        links.extend(linked_links)
+                        images.extend(linked_images)
+                        new_element = await self.replace_with_linked_content(soup, linked_content, link_url, link_element)
 
         # Извлечение и обработка ссылок из навигационного элемента
         await self.process_navigators(navigators, url, current_depth, filename)
