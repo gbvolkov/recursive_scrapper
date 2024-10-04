@@ -51,13 +51,12 @@ class KBHTMLRetriever(IHTMLRetriever):
             element.decompose()
         for element in soup.find_all('div', class_='article-properties editor__properties'):
             element.decompose()
-        content = soup.find('div', class_='editor__body-content editor-container')
-        
-        if content:
+        if content := soup.find(
+            'div', class_='editor__body-content editor-container'
+        ):
             return str(content)
-        else:
-            logging.warning(f"Не удалось получить контент для {self.page.url}") 
-            return content
+        logging.warning(f"Не удалось получить контент для {self.page.url}")
+        return content
 
 class KBWebCrawler2CSV(IWebCrawler):
 
