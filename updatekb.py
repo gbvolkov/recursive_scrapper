@@ -7,7 +7,7 @@ import re
 
 def summarise_text(text):
     cleaned_text = re.sub(r'##IMAGE##\s+\S+\.(png|jpg|jpeg|gif)', '', text)
-    return summarise(cleaned_text, max_length=512, min_length=64, do_sample=False)
+    return summarise(cleaned_text, max_length=1024, min_length=64, do_sample=False)
 
 
 def process_csv(input_path, output_path, chunk_size=4096, overlap=0.35, skiprows=None):
@@ -21,7 +21,8 @@ def process_csv(input_path, output_path, chunk_size=4096, overlap=0.35, skiprows
 
             # Generate overlapping chunks
             start = 0
-            while start < len(refs):
+            end = 0
+            while end < len(refs):
                 end = start + chunk_size
                 text_chunk = refs[start:end]
 
@@ -40,7 +41,7 @@ def process_csv(input_path, output_path, chunk_size=4096, overlap=0.35, skiprows
 
 
 async def main():
-    process_csv('./output/articles_data.csv', './output/articles_data_summ.csv', chunk_size=16384, overlap=0.5)
+    process_csv('./output/articles_data.csv', './output/articles_data_summ.csv', chunk_size=8192, overlap=0.5)#, skiprows=range(1,30))
 
 if __name__ == "__main__":
     asyncio.run(main())
