@@ -64,6 +64,11 @@ class KBWebCrawler2CSV(IWebCrawler):
         super().__init__(retriever, output_dir, images_dir, duplicate_tags, no_images, max_depth, non_recursive_classes, navigation_classes, ignored_classes, allowed_domains) 
         self.articles_data = []
 
+    def initialize(self):
+        super().initialize()
+        self.articles_data = []
+
+
     async def get_links(self, soup, url):
         std_links = await super().get_links(soup, url)
         links = []
