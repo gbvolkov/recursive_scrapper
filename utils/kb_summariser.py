@@ -18,10 +18,16 @@ local_model = model_name  # Change to your local model path if needed
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('summarization')
 
-# Load the tokenizer and model once at the global level
+# Check if GPU is available and set the device accordingly
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+logger.info(f"Using device: {device}")
+
+# Load the tokenizer and model
 tokenizer = AutoTokenizer.from_pretrained(local_model)
-model = AutoModelForSeq2SeqLM.from_pretrained(local_model)
-summarizer = pipeline("summarization", model=model, tokenizer=tokenizer)
+model = AutoModelForSeq2SeqLM.from_pretrained(local_model).to(device)
+
+# Initialize summarizer pipeline with device
+summarizer = pipeline("summarization", model=model, tokenizer=tokenizer, device=0 if torch.cuda.is_available() else -1)
 
 processed = 0
 
@@ -34,7 +40,7 @@ def summarise(text, max_length=256, min_length=64, do_sample=False):
             return_tensors='pt',
             truncation=False,
         )
-        input_ids = inputs['input_ids']  # Tensor of shape [1, length]
+        input_ids = inputs['input_ids'].to(device)  # Move input to the correct device
         length = input_ids.shape[1]
         model_max_length = tokenizer.model_max_length
 
