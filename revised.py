@@ -21,11 +21,16 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler()
+        logging.StreamHandler(), logging.FileHandler('./output/kb_retriever.log')
     ]
 )
-class KBHTMLRetriever(IHTMLRetriever):
 
+base_url = "https://kb.ileasing.ru"
+articles_url = "https://kb.ileasing.ru/space/"
+global_id = "a100dc8d-3af0-418c-8634-f09f1fdb06f2"  # Replace with actual global ID
+root_article = "af494df7-9560-4cb8-96d4-5b577dd4422e"
+
+class KBHTMLRetriever(IHTMLRetriever):
     async def login(self):
         if not self.login_url:
             return  # Вход не требуется
@@ -43,18 +48,23 @@ class KBHTMLRetriever(IHTMLRetriever):
             logging.error(f"Не удалось выполнить вход на {self.login_url}: {e}")
 
     async def clean_content(self, html_content):
-        content = await super().clean_content(html_content)
-        soup = BeautifulSoup(content, 'html.parser')
+        html_content = await super().clean_content(html_content)
+        soup = BeautifulSoup(html_content, 'html.parser')
         for element in soup.find_all('div', class_='article-info editor__article-info'):
             element.decompose()
         for element in soup.find_all('div', class_='article-properties editor__properties'):
             element.decompose()
-        content = soup.find('div', class_='editor__body-content editor-container')
+        if content := soup.find(
+            'div', class_='editor__body-content editor-container'
+        ):
+            return str(content)
+        logging.error(f"Не удалось получить контент статьи для {self.page.url}")
+        if self.page.url.startswith(articles_url):
+            return None
+        return html_content
 
-        return str(content)
 
 class KBWebCrawler(IWebCrawler):
-
     async def get_links(self, soup, url):
         std_links = await super().get_links(soup, url)
         links = []
@@ -72,9 +82,13 @@ class KBWebCrawler(IWebCrawler):
         std_links.extend(links)
         return std_links
 
-base_url = "https://kb.ileasing.ru"
-global_id = "a100dc8d-3af0-418c-8634-f09f1fdb06f2"  # Replace with actual global ID
-root_article = "af494df7-9560-4cb8-96d4-5b577dd4422e"
+    def get_title(self, soup, url):
+        if title := soup.find(
+            'p', class_=['editor-title__text']
+        ):
+            return title.text
+        return super().get_title(soup, url)
+
 
 from dotenv import load_dotenv,dotenv_values
 import os
@@ -111,7 +125,6 @@ async def main():
         )
         allowed_domains = ['kb.ileasing.ru', ""]
         start_urls = [
-            "https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/0ccc2abb-b7cd-44c5-bddb-91e055e545cd",
             #FAQ
             'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/e7a19a56-d067-4023-b259-94284ec4e16b',
             'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/a1038bbc-e5d9-4b5a-9482-2739c19cb6cb',

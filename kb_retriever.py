@@ -23,9 +23,17 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler()
-        , logging.FileHandler('kb_retriever.log')
+        , logging.FileHandler('./output/kb_retriever.log')
     ],
 )
+
+base_url = "https://kb.ileasing.ru"
+articles_url = "https://kb.ileasing.ru/space/"
+global_id = "a100dc8d-3af0-418c-8634-f09f1fdb06f2"  # Replace with actual global ID
+root_article = "af494df7-9560-4cb8-96d4-5b577dd4422e"
+
+
+
 class KBHTMLRetriever(IHTMLRetriever):
 
     async def login(self):
@@ -45,8 +53,8 @@ class KBHTMLRetriever(IHTMLRetriever):
             logging.error(f"Не удалось выполнить вход на {self.login_url}: {e}")
 
     async def clean_content(self, html_content):
-        content = await super().clean_content(html_content)
-        soup = BeautifulSoup(content, 'html.parser')
+        html_content = await super().clean_content(html_content)
+        soup = BeautifulSoup(html_content, 'html.parser')
         for element in soup.find_all('div', class_='article-info editor__article-info'):
             element.decompose()
         for element in soup.find_all('div', class_='article-properties editor__properties'):
@@ -55,8 +63,9 @@ class KBHTMLRetriever(IHTMLRetriever):
             'div', class_='editor__body-content editor-container'
         ):
             return str(content)
-        logging.warning(f"Не удалось получить контент для {self.page.url}")
-        return content
+        logging.error(f"Не удалось получить контент статьи для {self.page.url}")
+        if self.page.url.startswith(articles_url):
+            return None
 
 class KBWebCrawler2CSV(IWebCrawler):
 
@@ -132,10 +141,6 @@ class KBWebCrawler2CSV(IWebCrawler):
         #print("Data saved to ./content/articles_data.csv")
         #print("Images saved to ./content/images/")
 
-
-base_url = "https://kb.ileasing.ru"
-global_id = "a100dc8d-3af0-418c-8634-f09f1fdb06f2"  # Replace with actual global ID
-root_article = "af494df7-9560-4cb8-96d4-5b577dd4422e"
 
 from dotenv import load_dotenv,dotenv_values
 import os
