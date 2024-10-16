@@ -114,7 +114,7 @@ async def main():
     # Инициализация retriever без логина
     async with KBHTMLRetriever(base_url=start_url, login_url=login_url, login_credentials=login_credentials) as retriever:
         # Если требуется логин, раскомментируйте следующие строки:
-        if not await retriever.login():
+        if await retriever.login():
             crawler = KBWebCrawler(
                 retriever,
                 #duplicate_tags=['div', 'p', 'table'],
