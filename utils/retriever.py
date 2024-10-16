@@ -121,11 +121,12 @@ class IHTMLRetriever:
 
     async def login(self):
         if not self.login_url:
-            return  # Вход не требуется
+            return True # Вход не требуется
         try:
             raise "Not implemented"
         except Exception as e:
             logging.error(f"Не удалось выполнить вход на {self.login_url}: {e}")
+            return False
 
     async def clean_content(self, html_content):
         return str(html_content)
