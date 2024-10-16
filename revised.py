@@ -33,7 +33,7 @@ root_article = "af494df7-9560-4cb8-96d4-5b577dd4422e"
 class KBHTMLRetriever(IHTMLRetriever):
     async def login(self):
         if not self.login_url:
-            return  # Вход не требуется
+            return True # Вход не требуется
         try:
             await self.page.goto(self.login_url)
             await self.wait_for_page_load(self.page)
