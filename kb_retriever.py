@@ -176,7 +176,7 @@ async def main():
                 #duplicate_tags=['div', 'p', 'table'],
                 #duplicate_tags=[],
                 no_images=False,
-                max_depth=4,
+                max_depth=8,
                 non_recursive_classes=['tag'],
                 #navigation_classes=['side_categories', 'pager'],  # Ваши навигационные классы
                 #ignored_classes = ['footer', 'row header-box', 'breadcrumb', 'header container-fluid', 'icon-star', 'image_container']
