@@ -3,6 +3,20 @@ import os
 import pandas as pd
 import torch
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+from yandex_chain import YandexLLM
+import requests
+
+URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+
+ya_prompt = "ВАЖНО: Всегда выдавай ответ в формате JSON в виде массива объектов с полями topic, summary. Прочитай и проанализируй инструкцию, разработанную для специалистов техподдержки для ответов на вопросы. На основе анализа выдели системы и основные темы, которые затрагивает инструкция. Для каждой темы сделай краткое резюме, по которыму можно будет легко найти текст по запросу пользователя. ВАЖНО: Всегда выдавай ответ в формате JSON в виде массива объектов с полями topic, summary."
+
+
+from dotenv import load_dotenv,dotenv_values
+import os
+
+from pathlib import Path
+documents_path = Path.home() / ".env"
+load_dotenv(os.path.join(documents_path, 'gv.env'))
 
 # Set environment variables to handle SSL issues and enable offline mode if necessary
 os.environ['CURL_CA_BUNDLE'] = '' 
@@ -31,7 +45,51 @@ summarizer = pipeline("summarization", model=model, tokenizer=tokenizer, device=
 
 processed = 0
 
-def summarise(text, max_length=256, min_length=64, do_sample=False):
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import PromptTemplate
+from pydantic import BaseModel, Field
+
+class Summary(BaseModel):
+    topic: str = Field(description="Topic which summary is applied to")
+    summary: str = Field(description="Short summary of the article for the topic")
+
+
+def summarise_ya(text, max_length=1024, min_length=128, do_sample=False):
+    global processed
+    data = {}
+    # Указываем тип модели
+    data["modelUri"] = f"gpt://{os.environ.get('YA_FOLDER_ID')}/yandexgpt"
+    data["completionOptions"] = {"temperature": 0.3, "maxTokens": 1000}
+    prompt = f"{ya_prompt}. Длина каждого резюме не должна превышать {max_length} символов."
+    data["messages"] = [
+        {"role": "system", "text": prompt},
+        {"role": "user", "text": f"{text}"},
+    ]
+    brun = True
+    while brun:
+        try:
+            response = requests.post(
+                URL,
+                headers={
+                    "Accept": "application/json",
+                    "Authorization": f"Bearer {os.environ.get('YC_IAM_TOKEN')}"
+                },
+                json=data,
+            ).json() 
+            summary = response['result']['alternatives'][0]['message']['text'].strip()
+            start = summary.find('[')
+            end = summary.find(']')
+            summary = summary[start:end+1]
+            parser = JsonOutputParser(pydantic_object=Summary)
+            result = parser.parse(summary)
+            brun = False
+        except Exception as e:
+            logger.error(f"Error during summarization: {e}. Executing local summarization")
+            result = summarise_chunked(text, max_length=max_length, min_length=min_length, do_sample=do_sample)
+
+    return result
+
+def summarise_chunked(text, max_length=256, min_length=64, do_sample=False):
     global processed
     try:
         # Tokenize the input text to get the token count
@@ -103,6 +161,43 @@ def summarise(text, max_length=256, min_length=64, do_sample=False):
             # Ensure the final summary does not exceed max_length tokens
             result_tokens = tokenizer.encode(result, truncation=True, max_length=max_length)
             result = tokenizer.decode(result_tokens, skip_special_tokens=True)
+    except Exception as e:
+        logger.error(f"Error during summarization: {e}")
+        # Fallback: truncate the input tokens to max_length
+        result_tokens = input_ids[0][:max_length]
+        result = tokenizer.decode(result_tokens, skip_special_tokens=True)
+
+    output_length = len(tokenizer.encode(result, truncation=False))
+    logger.info(f'{processed}: Input length: {length} tokens ==> Output length: {output_length} tokens')
+    processed += 1
+    return result
+
+def summarise(text, max_length=256, min_length=64, do_sample=False):
+    global processed
+    try:
+        # Tokenize the input text to get the token count
+        inputs = tokenizer.encode_plus(
+            text,
+            return_tensors='pt',
+            truncation=False,
+        )
+        input_ids = inputs['input_ids'].to(device)  # Move input to the correct device
+        length = input_ids.shape[1]
+        model_max_length = tokenizer.model_max_length
+
+        # Adjust model_max_length if necessary
+        if model_max_length > 1024:
+            model_max_length = 512  # Set to the actual model's maximum input length
+
+        summary = summarizer(
+            text,
+            max_length=min(max_length, length),
+            min_length=min(min_length, length // 4),
+            do_sample=do_sample,
+            truncation=True,
+        )
+        result = summary[0]['summary_text'].strip()
+
     except Exception as e:
         logger.error(f"Error during summarization: {e}")
         # Fallback: truncate the input tokens to max_length
