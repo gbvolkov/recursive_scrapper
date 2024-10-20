@@ -425,7 +425,7 @@ class IWebCrawler:
                 if not link_url.startswith(('http://', 'https://')) or link_url == url or (urlparse(link_url).netloc not in self.allowed_domains and urlparse(link_url).netloc != self.base_netloc):
                     continue
                 if not has_ignored_class(link_element, self.non_recursive_classes) and link_url not in self.visited:
-                    (linked_content, linked_links, linked_images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1)
+                    (linked_content, linked_links, linked_images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth + 1, check_duplicates_depth=check_duplicates_depth)
                     if linked_content:
                         links.extend(linked_links)
                         images.extend(linked_images)

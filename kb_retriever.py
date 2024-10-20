@@ -81,7 +81,10 @@ class KBWebCrawler2CSV(IWebCrawler):
 
 
     async def get_links(self, soup, url):
-        std_links = await super().get_links(soup, url)
+        if url.startswith(f'{articles_url}{global_id}/article/'):
+            std_links = await super().get_links(soup, url)
+        else:
+            std_links = []
         links = []
         if nested_content := soup.find(
             'div', class_=['scrollbar', 'nested-articles__content', 'ps']
@@ -105,7 +108,7 @@ class KBWebCrawler2CSV(IWebCrawler):
         return wrapper
 
     async def process_page(self, url, filename=None, current_depth=0, check_duplicates_depth=-1):
-        (content, links, images, title) = await super().process_page(url, filename, current_depth, check_duplicates_depth)
+        (content, links, images, title) = await super().process_page(url, filename, current_depth, check_duplicates_depth=check_duplicates_depth)
         if content:
             markdown = self.html_to_markdown(content)
             if markdown == 'None':
@@ -173,17 +176,17 @@ async def main():
                 #duplicate_tags=['div', 'p', 'table'],
                 #duplicate_tags=[],
                 no_images=False,
-                max_depth=8,
+                max_depth=4,
                 non_recursive_classes=['tag'],
                 #navigation_classes=['side_categories', 'pager'],  # Ваши навигационные классы
                 #ignored_classes = ['footer', 'row header-box', 'breadcrumb', 'header container-fluid', 'icon-star', 'image_container']
             )
             start_urls = [
                 #FAQ
-                #'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/e7a19a56-d067-4023-b259-94284ec4e16b',
-                #'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/a1038bbc-e5d9-4b5a-9482-2739c19cb6cb',
-                #'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/3fdb4f97-2246-4b9e-b477-e9d7d8a2eb86',
-                #'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/dd64ab73-50ea-4d48-83f0-8dcef88512cb',
+                'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/e7a19a56-d067-4023-b259-94284ec4e16b',
+                'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/a1038bbc-e5d9-4b5a-9482-2739c19cb6cb',
+                'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/3fdb4f97-2246-4b9e-b477-e9d7d8a2eb86',
+                'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/dd64ab73-50ea-4d48-83f0-8dcef88512cb',
                 # Инструкции ОИТ
                 "https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/af494df7-9560-4cb8-96d4-5b577dd4422e",
                 "https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/508e24c5-aa23-419d-9251-69a2bf096706",
