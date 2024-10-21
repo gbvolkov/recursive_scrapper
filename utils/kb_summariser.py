@@ -5,6 +5,9 @@ import torch
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 from yandex_chain import YandexLLM
 import requests
+import json
+from json_repair import repair_json
+import time
 
 URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
@@ -66,7 +69,10 @@ def summarise_ya(text, max_length=1024, min_length=128, do_sample=False):
         {"role": "user", "text": f"{text}"},
     ]
     brun = True
-    while brun:
+    attempt = 0
+    while brun and attempt < 3:
+        attempt += 1
+        summary = ""
         try:
             response = requests.post(
                 URL,
@@ -75,17 +81,34 @@ def summarise_ya(text, max_length=1024, min_length=128, do_sample=False):
                     "Authorization": f"Bearer {os.environ.get('YC_IAM_TOKEN')}"
                 },
                 json=data,
-            ).json() 
+            ).json()
             summary = response['result']['alternatives'][0]['message']['text'].strip()
             start = summary.find('[')
             end = summary.find(']')
-            summary = summary[start:end+1]
-            parser = JsonOutputParser(pydantic_object=Summary)
-            result = parser.parse(summary)
+            if end == -1: 
+                end = len(summary)
+            if start != -1 and end != -1:
+                summary = summary[start:end+1]
+                if summary == '':
+                    raise ValueError(f"No JSON returned. Summary is empty: {summary}")
+                parser = JsonOutputParser(pydantic_object=Summary)
+                try:
+                    result = parser.parse(summary)
+                except Exception as e:
+                    logger.error(f"Error during json parsing: {e}.\t====>Text is: {text}\n====>Summary is{summary}.\ntrying to repare\n")
+                    summary = repair_json(summary)
+                    logger.error(f'====>After repair Summary is: {summary}')
+                    result = parser.parse(summary)
+            else:
+                result = [{'summary': summary}]
             brun = False
         except Exception as e:
-            logger.error(f"Error during summarization: {e}. Executing local summarization")
-            result = summarise_chunked(text, max_length=max_length, min_length=min_length, do_sample=do_sample)
+            logger.error(f"Error during summarization: {e}.\t====>Text is: {text}\n====>Summary is{summary}.\nRetrying\n")
+            time.sleep(5)
+            #result = json.loads(summary)
+            #result = summarise_chunked(text, max_length=max_length, min_length=min_length, do_sample=do_sample)
+    if brun:    
+        result = [{'summary': summarise_chunked(text, max_length=max_length, min_length=min_length, do_sample=do_sample)}]
 
     return result
 
