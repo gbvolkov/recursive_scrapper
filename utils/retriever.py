@@ -239,7 +239,7 @@ class IWebCrawler:
                     return ""
                 img_bytes = await response.body()
                 parsed = urlparse(img_url)
-                ext = os.path.splitext(parsed.path)[1] or '.png'
+                ext = os.path.splitext(parsed.path)[1] or '.'+content_type.split('/')[1]
                 img_content_hash = hashlib.md5(img_bytes).hexdigest()
                 img_name = re.sub(r'[\\/*?:"<>|]', "_", parsed.path.strip("/").replace("/", "_")) or "image"
                 img_filename = f"{img_name}_{img_content_hash}{ext}"
