@@ -181,7 +181,7 @@ async def main():
                 #navigation_classes=['side_categories', 'pager'],  # Ваши навигационные классы
                 #ignored_classes = ['footer', 'row header-box', 'breadcrumb', 'header container-fluid', 'icon-star', 'image_container']
             )
-            start_urls = [b.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/43a45ca0-36fc-4edb-86ef-380d022d1d34',
+            start_urls = [
                 #FAQ
                 'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/e7a19a56-d067-4023-b259-94284ec4e16b',
                 'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/a1038bbc-e5d9-4b5a-9482-2739c19cb6cb',
