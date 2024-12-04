@@ -176,10 +176,10 @@ async def main():
                 #duplicate_tags=['div', 'p', 'table'],
                 #duplicate_tags=[],
                 no_images=False,
-                max_depth=3,
+                max_depth=12,
                 non_recursive_classes=['tag'],
                 #navigation_classes=['side_categories', 'pager'],  # Ваши навигационные классы
-                #ignored_classes = ['footer', 'row header-box', 'breadcrumb', 'header container-fluid', 'icon-star', 'image_container']
+                ignored_classes = ['tags-classifiers editor__article-tags']
             )
             start_urls = [
                 #FAQ
@@ -201,6 +201,10 @@ async def main():
                 "https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/3b04ba0f-e24d-4ff6-ba59-60b869b67b16",
                 "https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/916983d3-f0e5-48f0-a1ab-4ec104035963",
                 "https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/3edc1530-3fbe-4a9e-8ea2-6876a2a63683"
+            ]
+            start_urls = [
+                #Инструкции к информационным системам
+                'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/7dcde763-e277-40c3-b92a-33d9c92cac96',
             ]
             for start_url in start_urls:
                 crawler.initialize()

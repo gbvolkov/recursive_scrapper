@@ -146,7 +146,7 @@ def process_csv(input_path, output_path, chunk_size=4096, overlap=0.35, skiprows
 
 
 async def main():
-    process_csv('./output/articles_data.csv', './output/articles_data_summ.csv', chunk_size=8192, overlap=0.25, skiprows=range(1,140))
+    process_csv('./output/articles_data.csv', './output/articles_data_summ.csv', chunk_size=8192, overlap=0.25)#, skiprows=range(1,140))
 
 if __name__ == "__main__":
     asyncio.run(main())

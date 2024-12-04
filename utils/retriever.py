@@ -267,7 +267,7 @@ class IWebCrawler:
         if link_url not in self.visited:
             logging.info(f"Обработка навигационной ссылки: {link_url}")
             markdown = ""
-            (content, links, images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth, check_duplicates_depth=3)
+            (content, links, images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth, check_duplicates_depth=8)
             if content is not None:
                 markdown = self.html_to_markdown(content)
                 await self.save_markdown(filename, markdown)
