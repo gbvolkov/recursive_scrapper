@@ -16,7 +16,8 @@ def cleanup_text(text):
 
 def summarise_text(text):
     text = cleanup_text(text)
-    return summarise_ya(text, max_length=1024, min_length=64, do_sample=False)
+    return [{'summary': text[:256]}]
+    #return summarise_ya(text, max_length=1024, min_length=64, do_sample=False)
 
 
 def process_csv_chunked(input_path, output_path, chunk_size=4096, overlap=0.35, skiprows=None):
@@ -92,13 +93,18 @@ def chunk_sentences(sentences, max_chunk_size, overlap_size=0):
 
     return chunks
 
+def cleanup_refs_for_processing(text: str):
+    return text.replace('Загрузка, пожалуйста подождите.', '')
+    #return re.sub(r'##IMAGE##\s+\S+\.(png|jpg|jpeg|gif)', '', text)
 
 def process_csv(input_path, output_path, chunk_size=4096, overlap=0.35, skiprows=None):
     with pd.read_csv(input_path, chunksize=1, encoding="utf-8", skiprows=skiprows) as reader:
         # Determine the chunk size and overlap size (35%)
 
         for chunk in reader:
+            processed_df = pd.DataFrame()
             refs = chunk['refs'].iloc[0]  # Access the value in the 'refs' column
+            refs = cleanup_refs_for_processing(refs)
 
             if len(refs) >= chunk_size:
                 sentences = sent_tokenize(refs, language='russian')
@@ -118,7 +124,10 @@ def process_csv(input_path, output_path, chunk_size=4096, overlap=0.35, skiprows
                     new_row['problem'] = problem
                     new_row['refs'] = text_chunk
                     print(f'for Record NO: {chunk['no'].iloc[0]}: {problem}: {solution}')
-                    new_row.to_csv(output_path, mode='a', index=False, header=not pd.io.common.file_exists(output_path))
+                    processed_df.add(new_row)
+            processed_df.to_csv(output_path, mode='a', index=False, header=not pd.io.common.file_exists(output_path))
+            with open('./output/summariser.idx', 'a', encoding='utf-8') as f:
+                f.write(f'{chunk["no"].iloc[0]}')
 
 """
             overlap_size = int(chunk_size * overlap)
@@ -146,7 +155,7 @@ def process_csv(input_path, output_path, chunk_size=4096, overlap=0.35, skiprows
 
 
 async def main():
-    process_csv('./output/articles_data.csv', './output/articles_data_summ.csv', chunk_size=8192, overlap=0.25, skiprows=range(1,140))
+    process_csv('./output/articles_data.csv', './output/articles_data_summ.csv', chunk_size=8192, overlap=0.25)#, skiprows=range(1,140))
 
 if __name__ == "__main__":
     asyncio.run(main())

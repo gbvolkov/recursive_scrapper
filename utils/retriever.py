@@ -479,3 +479,41 @@ class IWebCrawler:
         #markdown = self.html_to_markdown(content)
         #await self.save_markdown(filename, markdown)
         await self.process_navigation_link(start_url, filename=filename)
+
+
+async def main():
+    # Задайте ваш стартовый URL
+    #start_url = "https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/af494df7-9560-4cb8-96d4-5b577dd4422e"
+    #start_url = "https://quotes.toscrape.com/page/1/"
+    start_url = "https://quotes.toscrape.com"
+    #login_url = f"{base_url}/auth/sign-in?redirect=%2Fspace%2F{global_id}%2Farticle%2F{root_article}"
+    #login_url = "https://example.com/login"  # Замените на ваш URL для входа, если необходимо
+    #login_credentials = {
+    #    "username": USERNAME,
+    #    "password": PASSWORD
+    #}
+
+    # Инициализация retriever без логина
+    async with IHTMLRetriever(base_url=start_url, login_url=None, login_credentials='') as retriever:
+        # Если требуется логин, раскомментируйте следующие строки:
+        if await retriever.login():
+            #allowed_domains = ['kb.ileasing.ru']
+            crawler = IWebCrawler(
+                retriever,
+                duplicate_tags=['div', 'p', 'table'],
+                no_images=False,
+                max_depth=3,
+                non_recursive_classes=['tag'],
+                navigation_classes=['side_categories', 'pager'],  # Ваши навигационные классы
+                ignored_classes = ['footer', 'row header-box', 'breadcrumb', 'header container-fluid', 'icon-star', 'image_container']
+            )
+            start_urls = [
+                "https://quotes.toscrape.com",
+                "https://example.com"
+            ]
+            for start_url in start_urls:
+                crawler.initialize()
+                await crawler.crawl(start_url)
+
+if __name__ == "__main__":
+    asyncio.run(main())

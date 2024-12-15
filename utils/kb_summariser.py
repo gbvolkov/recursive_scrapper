@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import torch
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-from yandex_chain import YandexLLM
+#from yandex_chain import YandexLLM
 import requests
 import json
 from json_repair import repair_json
@@ -11,7 +11,18 @@ import time
 
 URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
-ya_prompt = "ВАЖНО: Всегда выдавай ответ в формате JSON в виде массива объектов с полями topic, summary. Прочитай и проанализируй инструкцию, разработанную для специалистов техподдержки для ответов на вопросы. На основе анализа выдели системы и основные темы, которые затрагивает инструкция. Для каждой темы сделай краткое резюме, по которыму можно будет легко найти текст по запросу пользователя. ВАЖНО: Всегда выдавай ответ в формате JSON в виде массива объектов с полями topic, summary."
+ya_prompt = """ВАЖНО: Всегда выдавай ответ в формате JSON в виде массива объектов с полями topic, summary. 
+Прочитай и проанализируй инструкцию, разработанную для специалистов техподдержки для ответов на вопросы. 
+На основе анализа выдели системы и основные темы, которые затрагивает инструкция. 
+Для каждой темы сделай краткое резюме, по которыму можно будет легко найти текст по запросу пользователя. 
+ВАЖНО: Всегда выдавай ответ в формате JSON в виде массива объектов с полями topic, summary.
+
+Используй Сокращения, Термины и определения и Подразделения из контекста Glossary.
+
+Glossary:
+{glossary}
+
+"""
 
 
 from dotenv import load_dotenv,dotenv_values
@@ -55,6 +66,9 @@ from pydantic import BaseModel, Field
 class Summary(BaseModel):
     topic: str = Field(description="Topic which summary is applied to")
     summary: str = Field(description="Short summary of the article for the topic")
+
+
+
 
 
 def summarise_ya(text, max_length=1024, min_length=128, do_sample=False):

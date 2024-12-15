@@ -16,4 +16,13 @@ torch
 requests
 nltk
 
+langchain_openai
+langchain_gigachat
+langchain_community
+langchainhub
+langchain-huggingface
+langchain_google_genai
+langchain_mistralai
+
+
 json-repair
