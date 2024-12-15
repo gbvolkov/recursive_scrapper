@@ -73,8 +73,8 @@ class IHTMLRetriever:
 
     async def __aenter__(self):
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=True)
-        self.context = await self.browser.new_context(user_agent=self.user_agent)
+        self.browser = await self.playwright.chromium.launch(headless=False)
+        self.context = await self.browser.new_context(user_agent=self.user_agent, accept_downloads=True)
         self.page = await self.context.new_page()
         return self
 
@@ -221,6 +221,7 @@ class IWebCrawler:
                 if img_url.startswith('data:'):
                     logging.warning(f"Пропуск изображения с data URI: {img_url}")
                     return ""
+                
                 response = await self.retriever.page.goto(img_url, timeout=10000)  # Таймаут 10 секунд
                 if response is None:
                     logging.warning(f"Не удалось скачать изображение: {img_url}")
@@ -266,7 +267,7 @@ class IWebCrawler:
         if link_url not in self.visited:
             logging.info(f"Обработка навигационной ссылки: {link_url}")
             markdown = ""
-            (content, links, images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth, check_duplicates_depth=3)
+            (content, links, images, _) = await self.process_page(link_url, filename=filename, current_depth=current_depth, check_duplicates_depth=8)
             if content is not None:
                 markdown = self.html_to_markdown(content)
                 await self.save_markdown(filename, markdown)

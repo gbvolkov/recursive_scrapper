@@ -1,23 +1,22 @@
-#from markdownify import markdownify as md
-from bs4 import BeautifulSoup, NavigableString
-import html2text
+import asyncio
+from utils.retriever import IHTMLRetriever, IWebCrawler, replace_tag
 
+async def main():
+    # Задайте ваш стартовый URL
+    start_url = "https://plantpad.samlab.cn/diseases_type.html?type=fungus&disease=black_spot_mixed_with_net_blotch"
 
+    async with IHTMLRetriever(base_url=start_url) as retriever:
+        crawler = IWebCrawler(
+            retriever,
+            duplicate_tags=['div', 'p', 'table'],
+            no_images=False,
+            max_depth=3,
+            non_recursive_classes=['tag'],
+            navigation_classes=['menus'],  # Ваши навигационные классы
+            ignored_classes = ['header']
+        )
+        crawler.initialize()
+        await crawler.crawl(start_url)
 
-with open('input/source.html', 'r', encoding='utf-8') as f:
-    src_content = f.read()
-
-with open('input/replaced.html', 'r', encoding='utf-8') as f:
-    replaced_content = f.read()
-
-converter = html2text.HTML2Text()
-converter.body_width = 0
-markdown = converter.handle(src_content)
-with open('input/source.md', 'w', encoding='utf-8') as f:
-    src_content = f.write(markdown)
-
-converter = html2text.HTML2Text()
-converter.body_width = 0
-markdown = converter.handle(replaced_content)
-with open('input/replaced.md', 'w', encoding='utf-8') as f:
-    src_content = f.write(markdown)
+if __name__ == "__main__":
+    asyncio.run(main())
