@@ -176,7 +176,8 @@ async def main():
                 #duplicate_tags=['div', 'p', 'table'],
                 #duplicate_tags=[],
                 no_images=False,
-                max_depth=12,
+                #max_depth=12,
+                max_depth=1,
                 non_recursive_classes=['tag'],
                 #navigation_classes=['side_categories', 'pager'],  # Ваши навигационные классы
                 ignored_classes = ['tags-classifiers editor__article-tags']
@@ -204,7 +205,9 @@ async def main():
             ]
             start_urls = [
                 #Инструкции к информационным системам
-                'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/7dcde763-e277-40c3-b92a-33d9c92cac96',
+                #'https://kb.ileasing.ru/space/a100dc8d-3af0-418c-8634-f09f1fdb06f2/article/7dcde763-e277-40c3-b92a-33d9c92cac96',
+                #Глоссарий
+                'https://kb.ileasing.ru/space/8fe58638-81f6-4cea-8099-f3f6e7292e1d/article/91c22083-a2cc-4928-bfad-5925b2da021f'
             ]
             for start_url in start_urls:
                 crawler.initialize()
