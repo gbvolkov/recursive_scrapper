@@ -42,7 +42,10 @@ class KBHTMLRetriever(IHTMLRetriever):
         try:
             await self.page.goto(self.login_url)
             await self.wait_for_page_load(self.page)
-            await self.page.get_by_role("button").first.click()
+            #await self.page.get_by_role("button").first.click()
+            employee_option = self.page.locator('div.auth-signin__option', has_text='Сотрудник компании')
+            await employee_option.locator('button').click()
+
             await self.page.get_by_placeholder("Введите логин").fill(self.login_credentials['username'])
             await self.page.get_by_placeholder("Введите пароль").click()
             await self.page.get_by_placeholder("Введите пароль").fill(self.login_credentials['password'])
