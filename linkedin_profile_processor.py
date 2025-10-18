@@ -1,9 +1,10 @@
 import asyncio
+import csv
 import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -36,6 +37,8 @@ Profile content:
 
 @dataclass
 class ProfileResult:
+    row_id: int
+    processed_sequence: int
     name: str
     linkedin_url: str
     profile_summary: str
@@ -189,6 +192,73 @@ class LinkedInSession:
         return {"status": "OK", "text": text}
 
 
+def load_existing_progress(csv_path: Path) -> Tuple[Set[int], int]:
+    if not csv_path.exists():
+        return set(), 0
+
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception:
+        return set(), 0
+
+    processed_ids: Set[int] = set()
+    if "row_id" in df.columns:
+        processed_ids = set(
+            pd.to_numeric(df["row_id"], errors="coerce").dropna().astype(int).tolist()
+        )
+
+    processed_count = 0
+    if "processed_sequence" in df.columns:
+        processed_sequence = pd.to_numeric(
+            df["processed_sequence"], errors="coerce"
+        ).dropna()
+        if not processed_sequence.empty:
+            processed_count = int(processed_sequence.max())
+    if processed_count <= 0:
+        processed_count = len(df)
+
+    return processed_ids, processed_count
+
+
+def append_result_to_csv(csv_path: Path, result: ProfileResult) -> None:
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "row_id",
+        "processed_sequence",
+        "name",
+        "linkedin_url",
+        "profile_summary",
+        "activity_assessment",
+        "activity_flag",
+        "profile_status",
+    ]
+
+    if result.is_active_recruiter is True:
+        activity_flag = "ACTIVE"
+    elif result.is_active_recruiter is False:
+        activity_flag = "INACTIVE"
+    else:
+        activity_flag = "UNKNOWN"
+
+    row_dict = {
+        "row_id": result.row_id,
+        "processed_sequence": result.processed_sequence,
+        "name": result.name,
+        "linkedin_url": result.linkedin_url,
+        "profile_summary": result.profile_summary,
+        "activity_assessment": result.activity_assessment,
+        "activity_flag": activity_flag,
+        "profile_status": result.profile_status,
+    }
+
+    write_header = not csv_path.exists()
+    with csv_path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row_dict)
+
+
 class RecruiterProfiler:
     def __init__(self, llm: ChatOpenAI) -> None:
         self.llm = llm
@@ -226,6 +296,7 @@ class RecruiterProfiler:
 async def process_profiles(
     excel_path: Path,
     output_path: Path,
+    output_csv_path: Path,
     linkedin_email: str,
     linkedin_password: str,
     openai_model: str = "gpt-4o-mini",
@@ -238,69 +309,86 @@ async def process_profiles(
     llm = ChatOpenAI(model=openai_model, temperature=0.1)
     profiler = RecruiterProfiler(llm=llm)
 
-    results: List[ProfileResult] = []
-    async with LinkedInSession(email=linkedin_email, password=linkedin_password, headless=headless) as session:
-        for _, row in df.iterrows():
-            first_name = str(row.get("Name", "")).strip()
-            last_name = str(row.get("Family Name", "")).strip()
-            full_name = " ".join(part for part in [first_name, last_name] if part)
-            linkedin_url = str(row.get("Linkedin", "")).strip()
+    processed_ids, processed_count = load_existing_progress(output_csv_path)
+    row_results: Dict[int, ProfileResult] = {}
+    pending_rows: List[Tuple[int, Dict[str, Any]]] = []
 
-            if not linkedin_url:
-                results.append(
-                    ProfileResult(
-                        name=full_name or "Unknown",
-                        linkedin_url="",
-                        profile_summary="",
-                        activity_assessment="Missing LinkedIn URL.",
-                        profile_status="NOK",
-                    )
-                )
-                continue
+    for idx, row in df.iterrows():
+        row_id = int(idx) + 1
+        if row_id in processed_ids:
+            continue
 
-            profile_payload = await session.fetch_profile_text(linkedin_url)
-            analysis = profiler.analyse(profile_payload.get("text", ""))
+        first_name = str(row.get("Name", "")).strip()
+        last_name = str(row.get("Family Name", "")).strip()
+        full_name = " ".join(part for part in [first_name, last_name] if part) or "Unknown"
+        linkedin_url = str(row.get("Linkedin", "")).strip()
 
-            results.append(
-                ProfileResult(
-                    name=full_name or "Unknown",
+        if not linkedin_url:
+            processed_count += 1
+            result = ProfileResult(
+                row_id=row_id,
+                processed_sequence=processed_count,
+                name=full_name,
+                linkedin_url="",
+                profile_summary="",
+                activity_assessment="Missing LinkedIn URL.",
+                profile_status="NOK",
+                is_active_recruiter=None,
+            )
+            append_result_to_csv(output_csv_path, result)
+            row_results[row_id] = result
+            continue
+
+        pending_rows.append(
+            (
+                row_id,
+                {
+                    "name": full_name,
+                    "linkedin_url": linkedin_url,
+                },
+            )
+        )
+
+    if pending_rows:
+        async with LinkedInSession(email=linkedin_email, password=linkedin_password, headless=headless) as session:
+            for row_id, metadata in pending_rows:
+                linkedin_url = metadata["linkedin_url"]
+                full_name = metadata["name"]
+
+                profile_payload = await session.fetch_profile_text(linkedin_url)
+                analysis = profiler.analyse(profile_payload.get("text", ""))
+
+                processed_count += 1
+                result = ProfileResult(
+                    row_id=row_id,
+                    processed_sequence=processed_count,
+                    name=full_name,
                     linkedin_url=linkedin_url,
                     profile_summary=analysis["profile_summary"],
                     activity_assessment=analysis["activity_assessment"],
                     profile_status=profile_payload.get("status", "NOK"),
                     is_active_recruiter=analysis.get("is_active_recruiter"),
                 )
-            )
+                append_result_to_csv(output_csv_path, result)
+                row_results[row_id] = result
 
-    output_records: List[Dict[str, Any]] = []
-    for item in results:
-        if item.is_active_recruiter is True:
-            activity_flag = "ACTIVE"
-        elif item.is_active_recruiter is False:
-            activity_flag = "INACTIVE"
-        else:
-            activity_flag = "UNKNOWN"
+    new_results = [row_results[row_id] for row_id in sorted(row_results.keys())]
 
-        output_records.append(
-            {
-                "name": item.name,
-                "linkedin_url": item.linkedin_url,
-                "profile_summary": item.profile_summary,
-                "activity_assessment": item.activity_assessment,
-                "activity_flag": activity_flag,
-                "profile_status": item.profile_status,
-            }
-        )
+    if output_csv_path.exists():
+        try:
+            consolidated_df = pd.read_csv(output_csv_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            consolidated_df.to_excel(output_path, index=False)
+        except Exception:
+            pass
 
-    output_df = pd.DataFrame(output_records)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_df.to_excel(output_path, index=False)
-    return results
+    return new_results
 
 
 def main() -> None:
     excel_file = Path(os.environ.get("RECRUITER_EXCEL", "Copy of Hunters_for_MailTrack_final(1).xlsx"))
     output_file = Path(os.environ.get("RECRUITER_OUTPUT", "output/linkedin_profile_summary.xlsx"))
+    output_csv_file = Path(os.environ.get("RECRUITER_OUTPUT_CSV", "output/linkedin_profile_summary.csv"))
 
     linkedin_email = os.environ.get("LINKEDIN_EMAIL")
     linkedin_password = os.environ.get("LINKEDIN_PASSWORD")
@@ -316,6 +404,7 @@ def main() -> None:
         process_profiles(
             excel_path=excel_file,
             output_path=output_file,
+            output_csv_path=output_csv_file,
             linkedin_email=linkedin_email,
             linkedin_password=linkedin_password,
             headless=headless,
