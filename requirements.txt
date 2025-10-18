@@ -27,3 +27,4 @@ langchain_mistralai
 
 
 json-repair
+openpyxl
